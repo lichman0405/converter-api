@@ -26,11 +26,9 @@ async def create_upload_file(file: UploadFile = File(...)):
     logger.info(f"Received file: {file.filename} (type: {file.content_type})")
 
     try:
-        # Call core conversion logic
         output_content, new_filename = convert_structure_file(file)
 
-        # Provide the converted content as a downloadable file
-        response_stream = io.BytesIO(output_content.encode('utf-8'))
+        response_stream = io.BytesIO(output_content) 
 
         logger.success(f"Successfully sent converted file {new_filename} for download.")
 

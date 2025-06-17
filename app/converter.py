@@ -7,7 +7,7 @@
 import io
 from ase.io import read, write
 from fastapi import UploadFile, HTTPException
-from .logger import logger
+from app.logger import logger
 
 def convert_structure_file(file: UploadFile):
     """
@@ -15,6 +15,7 @@ def convert_structure_file(file: UploadFile):
     """
     filename = file.filename
     content = file.file.read()
+
 
     input_stream = io.StringIO(content.decode('utf-8'))
     
@@ -49,7 +50,8 @@ def convert_structure_file(file: UploadFile):
         logger.warning(f"Unsupported file format: {filename}")
         raise HTTPException(status_code=400, detail="Unsupported file format. Please upload a .cif or .xyz file.")
 
-    output_stream = io.StringIO()
+    # Modified: Change to io.BytesIO to handle potential binary writes or more robust text handling
+    output_stream = io.BytesIO() 
     try:
         write(output_stream, atoms, format=output_format)
         output_content = output_stream.getvalue()
