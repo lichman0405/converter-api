@@ -16,7 +16,7 @@ def convert_structure_file(file: UploadFile):
     filename = file.filename
     content = file.file.read()
 
-    # When reading, content needs to be decoded for text formats like CIF/XYZ
+    # Input stream for reading is always text-based for .cif and .xyz
     input_stream = io.StringIO(content.decode('utf-8'))
     
     atoms = None
@@ -50,15 +50,12 @@ def convert_structure_file(file: UploadFile):
         logger.warning(f"Unsupported file format: {filename}")
         raise HTTPException(status_code=400, detail="Unsupported file format. Please upload a .cif or .xyz file.")
 
-    output_stream = io.BytesIO() 
+    # Modified: Always use StringIO for writing, as CIF and XYZ are text formats.
+    output_stream = io.StringIO() 
     try:
         write(output_stream, atoms, format=output_format)
-        # Modified: Ensure output_content is always bytes.
-        # getvalue() might return str for text formats, so encode if it's str.
-        output_content = output_stream.getvalue()
-        if isinstance(output_content, str):
-            output_content = output_content.encode('utf-8')
-
+        # Modified: Always encode the string content to bytes for the response.
+        output_content = output_stream.getvalue().encode('utf-8')
         logger.success(f"Successfully converted {filename} to {new_filename}.")
     except Exception as e:
         logger.error(f"Error writing new file format: {e}")
