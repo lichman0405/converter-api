@@ -50,12 +50,13 @@ def convert_structure_file(file: UploadFile):
         logger.warning(f"Unsupported file format: {filename}")
         raise HTTPException(status_code=400, detail="Unsupported file format. Please upload a .cif or .xyz file.")
 
-    # Modified: Always use StringIO for writing, as CIF and XYZ are text formats.
-    output_stream = io.StringIO() 
+    # Modified: Always use BytesIO for writing and getvalue() will correctly return bytes.
+    # The 'write' function of ase.io handles the internal encoding for text formats.
+    output_stream = io.BytesIO() 
     try:
         write(output_stream, atoms, format=output_format)
-        # Modified: Always encode the string content to bytes for the response.
-        output_content = output_stream.getvalue().encode('utf-8')
+        # getvalue() from BytesIO already returns bytes, so no need for .encode('utf-8')
+        output_content = output_stream.getvalue() 
         logger.success(f"Successfully converted {filename} to {new_filename}.")
     except Exception as e:
         logger.error(f"Error writing new file format: {e}")
