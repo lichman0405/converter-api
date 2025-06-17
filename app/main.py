@@ -8,7 +8,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 import io
 from .logger import logger
-from .converter import convert_structure_file
+from .converter import convert_cif_to_xyz, convert_xyz_to_cif 
 
 app = FastAPI(
     title="File Type Converter API",
@@ -25,10 +25,24 @@ async def startup_event():
 async def create_upload_file(file: UploadFile = File(...)):
     logger.info(f"Received file: {file.filename} (type: {file.content_type})")
 
-    try:
-        output_content, new_filename = convert_structure_file(file)
+    filename = file.filename
+    if not filename:
+        logger.warning("There is no filename provided in the uploaded file.")
+        raise HTTPException(status_code=400, detail="No file name.")
 
-        response_stream = io.BytesIO(output_content) 
+    output_content = None
+    new_filename = None
+
+    try:
+        if filename.lower().endswith('.cif'):
+            output_content, new_filename = convert_cif_to_xyz(file)
+        elif filename.lower().endswith('.xyz'):
+            output_content, new_filename = convert_xyz_to_cif(file)
+        else:
+            logger.warning(f"Unsupported file format: {filename}")
+            raise HTTPException(status_code=400, detail="Unsupported file format. Please upload a .cif or .xyz file.")
+
+        response_stream = io.BytesIO(output_content)
 
         logger.success(f"Successfully sent converted file {new_filename} for download.")
 
