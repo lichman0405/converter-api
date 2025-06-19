@@ -3,114 +3,65 @@
 # Date: 2025-06-16
 # Version: 0.1.0
 
-
 import io
-import os
-from ase import Atoms
+import re
 from ase.io import read, write
-from fastapi import UploadFile, HTTPException
 from .logger import logger
 
-# flag to identify lattice information in XYZ comment lines
-LATTICE_INFO_TAG = "Lattice_Info:"
-
-def convert_cif_to_xyz(file: UploadFile):
-    """
-    Converts a CIF file to XYZ format, embedding lattice information
-    in the comment line of the XYZ file.
-    """
-    filename = file.filename
+def convert_cif_to_xyz(content: str) -> str:
+    logger.info("Starting CIF to XYZ lossless conversion...")
+    input_stream = io.StringIO(content)
     try:
-        content = file.file.read()
-        input_stream = io.StringIO(content.decode('utf-8'))
         atoms = read(input_stream, format='cif')
-    except Exception as e:
-        logger.error(f"Failed to read CIF file '{filename}': {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid or corrupted CIF file: {e}")
+        cell = atoms.get_cell().flatten()
+        cell_str = " ".join(map(str, cell))
+        pbc_str = " ".join(["T" if p else "F" for p in atoms.pbc])
+        comment = f'Lattice="{cell_str}" pbc="{pbc_str}"'
+        logger.info(f"Embedded lattice info into comment: {comment}")
+        output_stream = io.StringIO()
+        write(output_stream, atoms, format='xyz', comment=comment)
+        logger.success("CIF to XYZ conversion successful.")
+        return output_stream.getvalue()
     finally:
         input_stream.close()
+        if 'output_stream' in locals():
+            output_stream.close()
 
-    # parse the lattice parameters from the Atoms object
+def convert_xyz_to_cif(content: str) -> str:
+    logger.info("Starting XYZ to CIF lossless conversion...")
+    input_stream = io.StringIO(content)
     try:
-        cell_params = atoms[0].get_cell().cellpar() # type: ignore
-        # standardize to 6 parameters
-        lattice_str = ";".join(f"{p:.8f}" for p in cell_params)
-        comment_line = f"{LATTICE_INFO_TAG} {lattice_str}"
-        logger.info(f"Embedding lattice info into XYZ comment: {comment_line}")
-    except Exception:
-        # no lattice information available, set a default comment
-        comment_line = "No lattice information in source CIF."
-        logger.warning(f"No lattice info found in {filename}, XYZ comment will be empty.")
-
-    
-    output_stream = io.StringIO()
-    try:
-        # passing the comment line to the write function
-        write(output_stream, atoms, format='xyz', comment=comment_line)
-        output_content = output_stream.getvalue().encode('utf-8')
-        new_filename = os.path.splitext(filename)[0] + '.xyz' # type: ignore
-        logger.success(f"Successfully converted {filename} to {new_filename} with lattice info.")
-    except Exception as e:
-        logger.error(f"Error writing XYZ file format: {e}")
-        raise HTTPException(status_code=500, detail=f"File conversion failed: {e}")
-    finally:
-        output_stream.close()
-
-    return output_content, new_filename
-
-
-def convert_xyz_to_cif(file: UploadFile):
-    """
-    Converts an XYZ file to CIF format. It intelligently checks for
-    lattice information in the comment line to rebuild a periodic CIF.
-    """
-    filename = file.filename
-    content = file.file.read()
-    
-    logger.info(f"Starting XYZ to CIF conversion for file: {filename}...")
-    
-    # parse the content to extract lattice information if available
-    cell = None
-    try:
-        decoded_content = content.decode('utf-8')
-        lines = decoded_content.splitlines()
-        if len(lines) > 1 and lines[1].strip().startswith(LATTICE_INFO_TAG):
-            param_str = lines[1].strip().replace(LATTICE_INFO_TAG, "").strip()
-            cell_params = [float(p) for p in param_str.split(';')]
-            if len(cell_params) == 6:
-                # build the cell from the parameters
-                cell = Atoms.fromdict({'cell': cell_params, 'pbc': True}).get_cell()
-                logger.info("Successfully decoded lattice info from XYZ comment.")
-    except Exception as e:
-        logger.warning(f"Could not decode lattice info from comment line, will proceed without it. Error: {e}")
-
-    input_stream = io.StringIO(decoded_content)
-    try:
-        # read the XYZ file into an Atoms object
+        lines = content.splitlines()
+        lattice_matrix = None
+        pbc = [False, False, False]
+        if len(lines) >= 2:
+            comment_line = lines[1]
+            lattice_match = re.search(r'Lattice="([^"]+)"', comment_line)
+            if lattice_match:
+                try:
+                    cell_flat = np.fromstring(lattice_match.group(1), sep=' ')
+                    lattice_matrix = cell_flat.reshape(3, 3)
+                    logger.info("Found and parsed lattice data from XYZ comment.")
+                except (ValueError, IndexError):
+                    logger.warning("Found 'Lattice' tag but failed to parse it. Proceeding without lattice info.")
+                    lattice_matrix = None
+            pbc_match = re.search(r'pbc="([^"]+)"', comment_line)
+            if pbc_match:
+                pbc_flags = pbc_match.group(1).strip().split()
+                pbc = [flag.upper() == 'T' for flag in pbc_flags]
+                logger.info(f"Found and parsed PBC info: {pbc}")
         atoms = read(input_stream, format='xyz')
-        
-        # if we successfully decoded the cell, apply it to the Atoms object
-        if cell is not None:
-            atoms.set_cell(cell) # type: ignore
-            atoms.set_pbc(True) # set periodic boundary conditions # type: ignore
-            logger.info("Applied decoded cell to Atoms object before writing to CIF.")
-
-    except Exception as e:
-        logger.error(f"Failed to read XYZ file for conversion: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid or corrupted XYZ file: {e}")
+        if lattice_matrix is not None:
+            atoms.set_cell(lattice_matrix)
+            atoms.set_pbc(pbc)
+            logger.info("Applied parsed lattice and PBC data to the structure.")
+        else:
+            logger.warning("No valid lattice data found in XYZ. Generating CIF with default cell.")
+        output_stream = io.StringIO()
+        write(output_stream, atoms, format='cif')
+        logger.success("XYZ to CIF conversion successful.")
+        return output_stream.getvalue()
     finally:
         input_stream.close()
-
-    output_stream = io.BytesIO()
-    try:
-        write(output_stream, atoms, format='cif')
-        output_content = output_stream.getvalue()
-        new_filename = os.path.splitext(filename)[0] + '.cif'# type: ignore
-        logger.success(f"Successfully converted {filename} to {new_filename}.")
-    except Exception as e:
-        logger.error(f"Error writing final CIF file: {e}")
-        raise HTTPException(status_code=500, detail=f"File conversion failed: {e}")
-    finally:
-        output_stream.close()
-
-    return output_content, new_filename
+        if 'output_stream' in locals():
+            output_stream.close()
