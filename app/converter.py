@@ -5,6 +5,7 @@
 
 import io
 import re
+import numpy as np
 from ase.io import read, write
 from .logger import logger
 
