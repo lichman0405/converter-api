@@ -12,9 +12,9 @@ from .logger import logger
 from .converter import convert_cif_to_xyz, convert_xyz_to_cif
 
 app = FastAPI(
-    title="Lossless File Type Converter API",
-    version="1.1.0-fixed", # Updated version
-    description="A robust, refactored API for **lossless** round-trip conversion between CIF and XYZ file formats."
+    title="Corrected Lossless File Converter API",
+    version="2.0.0", # Final Corrected Version
+    description="A robust API for lossless conversion that correctly preserves periodicity for scientific workflows."
 )
 
 @app.on_event("startup")
@@ -43,7 +43,8 @@ async def create_upload_file(file: UploadFile = File(...)):
             output_content = convert_cif_to_xyz(contents_str)
             new_filename = f"{stem}.xyz"
         elif suffix == '.xyz':
-            output_content = convert_xyz_to_cif(contents_str)
+            # Pass the filename for logging purposes, but logic no longer depends on it
+            output_content = convert_xyz_to_cif(contents_str, filename=filename)
             new_filename = f"{stem}.cif"
         else:
             logger.warning(f"Unsupported file format: {filename}")
@@ -58,11 +59,9 @@ async def create_upload_file(file: UploadFile = File(...)):
             headers={"Content-Disposition": f"attachment; filename={new_filename}"}
         )
     except ValueError as e:
-        # Catch specific conversion errors from the converter
         logger.error(f"Conversion failed due to invalid file content: {e}")
-        raise HTTPException(status_code=422, detail=str(e)) # 422 Unprocessable Entity
+        raise HTTPException(status_code=422, detail=str(e))
     except HTTPException as e:
-        # Re-raise HTTPExceptions to let FastAPI handle them
         raise e
     except Exception as e:
         logger.exception(f"An unexpected internal error occurred while processing file {file.filename}")
@@ -72,4 +71,4 @@ async def create_upload_file(file: UploadFile = File(...)):
 async def root():
     """Root path providing welcome information"""
     logger.info("Root path accessed.")
-    return {"message": "Welcome to the Lossless CIF/XYZ file converter. POST files to /convert/."}
+    return {"message": "Welcome to the Corrected Lossless CIF/XYZ file converter. POST files to /convert/."}
